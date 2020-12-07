@@ -50,6 +50,7 @@ unsigned int seq = 0;
 //一些封装函数的申明
 unsigned int checksum(const char* s, const int length);//差错检测
 void sendAndWait(SOCKET s,const char* buf,int len,int flags,const sockaddr *to,int tolen);
+void sendOneFile(SOCKET s, char* filename, const sockaddr* to, int tolen);
 
 //主函数
 int main() {
@@ -105,59 +106,12 @@ int main() {
 	}
 
 	//6. rdt2.2
-	char filename[FILENAMELEN] = "temp//1.jpg";
-	package *pac = new package();
-	char buf[packageSize] = {};
-
-	memcpy(pac->data, filename, FILENAMELEN);
-	pac->seq = seq;
-	memcpy(buf, pac, packageSize);
-	pac->checksum = checksum(buf, packageSize);
-	memcpy(buf, pac, packageSize);
-	sendAndWait(sender_socket, buf, packageSize, 0, (sockaddr*)&recver_addr, addr_len);
-	seq = (seq + 1) % 2;
-	delete pac;
-	pac = new package();
-
-	ifstream reader;
-
-	reader.open(filename, ios::binary);
-	//int count = 0;
-	while (reader.read(pac->data, DATALENGTH)) {
-		memcpy(buf, pac, packageSize);
-		//写入校验和以及序号
-		pac->seq = seq;
-		memcpy(buf, pac, packageSize);
-		pac->checksum = checksum(buf, packageSize);
-		memcpy(buf, pac, packageSize);
-		sendAndWait(sender_socket, buf, packageSize, 0, (sockaddr*)&recver_addr, addr_len);
-		delete pac;
-		pac = new package();//更新pac指针
-		seq = (seq + 1) % 2;//模2的前进
-
-
-				////验证校验码
-		//memcpy(buf, pac, packageSize);
-		//pac->seq = 1;
-		//memcpy(buf, pac, packageSize);
-		//pac->checksum = checksum(buf, packageSize);
-		//memcpy(buf, pac, packageSize);
-		//cout << checksum(buf, packageSize) << endl;
-	}
-	memcpy(buf, pac, packageSize);
-	//写入校验和以及序号
-	pac->seq = seq;
-	pac->flag[0] |=FLAG_FEND;
-	memcpy(buf, pac, packageSize);
-	pac->checksum = checksum(buf, packageSize);
-	memcpy(buf, pac, packageSize);
-	//发送这个包
-	sendAndWait(sender_socket, buf, packageSize, 0, (sockaddr*)&recver_addr, addr_len);
-	cout << "完成传输！" << endl;
+	char filename1[FILENAMELEN] = "temp//1.jpg";
+	char filename2[FILENAMELEN] = "temp//1.txt";
+	sendOneFile(sender_socket, filename1, (sockaddr*)&recver_addr, addr_len);
+	sendOneFile(sender_socket, filename2, (sockaddr*)&recver_addr, addr_len);
 
 	//清理资源占用
-	delete pac;
-	reader.close();
 	closesocket(sender_socket);
 	WSACleanup();
 	return 0;
@@ -211,4 +165,51 @@ void sendAndWait(SOCKET s, const char* buf, int len, int flags, const sockaddr* 
 			break;
 		}
 	}
+}
+
+
+void sendOneFile(SOCKET s, char* filename, const sockaddr* to, int tolen) {
+/*	功能：向目的地址，发送一个完整的文件
+*/
+	package* pac = new package();
+	char buf[packageSize] = {};
+	//首先将文件名发给接收端
+	memcpy(pac->data, filename, FILENAMELEN);
+	pac->seq = seq;
+	memcpy(buf, pac, packageSize);
+	pac->checksum = checksum(buf, packageSize);
+	memcpy(buf, pac, packageSize);
+	sendAndWait(s, buf, packageSize, 0, to, tolen);
+	seq = (seq + 1) % 2;
+	delete pac;
+	pac = new package();
+	//下面打开文件，读取，发送
+	ifstream reader;
+	reader.open(filename, ios::binary);
+	while (reader.read(pac->data, DATALENGTH)) {
+		memcpy(buf, pac, packageSize);
+		//写入校验和以及序号
+		pac->seq = seq;
+		memcpy(buf, pac, packageSize);
+		pac->checksum = checksum(buf, packageSize);
+		memcpy(buf, pac, packageSize);
+		sendAndWait(s, buf, packageSize, 0, to, tolen);
+		delete pac;
+		pac = new package();//更新pac指针
+		seq = (seq + 1) % 2;//模2的前进
+	}
+	//最后把剩余的尾部也发出去
+	memcpy(buf, pac, packageSize);
+	//写入校验和以及序号
+	pac->seq = seq;
+	pac->flag[0] |= FLAG_FEND;//将FEND标志位置位
+	memcpy(buf, pac, packageSize);
+	pac->checksum = checksum(buf, packageSize);
+	memcpy(buf, pac, packageSize);
+	//发送这个包
+	sendAndWait(s, buf, packageSize, 0, to, tolen);
+	cout << "完成传输！" << endl;
+	//清理资源占用
+	delete pac;
+	reader.close();
 }

@@ -49,7 +49,7 @@ unsigned int seq = 0;//记录自己想要收到的下一个包的序号
 
 unsigned int checksum(const char* s, const int length);//差错检测
 void sendACK(SOCKET s, bool redun, const sockaddr* to, int tolen);//发送一个ACK包
-
+void recvOneFile(SOCKET s, sockaddr* to, int tolen);//接收一个文件
 
 int main() {
 	//1. 初始化Socket DLL
@@ -102,40 +102,10 @@ int main() {
 
 	 //6. rdt2.2接收端
 	//第一个包包含文件名，单独识别
+	recvOneFile(recver_socket, (sockaddr*)&sender_addr, len);
+	recvOneFile(recver_socket, (sockaddr*)&sender_addr, len);
 
-	char buf[packageSize] = {};
-	package* pac = new package();
-	char filename[FILENAMELEN] = {};
-	recvfrom(recver_socket, buf, packageSize, 0, (sockaddr*)&sender_addr, &len);
-	memcpy(pac, buf, packageSize);
-	memcpy(filename, pac->data, FILENAMELEN);
 
-	ofstream writer;
-	writer.open(filename, ios::binary);
-	sendACK(recver_socket, false, (sockaddr*)&sender_addr, len);
-	seq = (seq + 1) % 2;
-	int count = 0;
-	while (1) {
-		recvfrom(recver_socket, buf, packageSize, 0, (sockaddr*)&sender_addr, &len);
-		memcpy(pac, buf, packageSize);
-		if ((checksum(buf, packageSize) != 0) || (pac->seq != seq))//如果这个包被损坏了，或者不是接收方想要的包
-		{
-			//重发ACK包
-			sendACK(recver_socket, true, (sockaddr*)&sender_addr, len);
-		}
-		else if (pac->seq == seq) {//如果接收到了正确的包，写入文件返回正确的ACK
-			//cout << ++count << endl;
-			writer.write(pac->data, DATALENGTH);
-			sendACK(recver_socket, false, (sockaddr*)&sender_addr, len);
-			if ((pac->flag[0] & FLAG_FEND) == FLAG_FEND)//如果接收到的是文件末尾，退出
-				break;
-		}
-		seq = (seq + 1) % 2;
-		delete pac;
-		pac = new package();
-	}
-	delete pac;
-	writer.close();
 	closesocket(recver_socket);
 	WSACleanup();
 	return 0;
@@ -173,4 +143,43 @@ void sendACK(SOCKET s,bool redun, const sockaddr* to, int tolen) {
 	sendto(s, sbuf, packageSize, 0, to, tolen);
 	delete[]sbuf;
 	delete ack_pac;
+}
+
+void recvOneFile(SOCKET s, sockaddr* to, int tolen) {
+	char buf[packageSize] = {};
+	package* pac = new package();
+	char filename[FILENAMELEN] = {};
+	//从源地址接收文件名数据包
+	recvfrom(s, buf, packageSize, 0, to, &tolen);
+	memcpy(pac, buf, packageSize);
+	//赋值文件名
+	memcpy(filename, pac->data, FILENAMELEN);
+
+	ofstream writer;
+	writer.open(filename, ios::binary);//打开一个文件
+
+	sendACK(s, false, to, tolen);//发送ACK
+	seq = (seq + 1) % 2;
+	//int count = 0;
+	while (1) {
+		recvfrom(s, buf, packageSize, 0, to, &tolen);
+		memcpy(pac, buf, packageSize);
+		if ((checksum(buf, packageSize) != 0) || (pac->seq != seq))//如果这个包被损坏了，或者不是接收方想要的包
+		{
+			//重发ACK包
+			sendACK(s, true, to, tolen);
+		}
+		else if (pac->seq == seq) {//如果接收到了正确的包，写入文件返回正确的ACK
+			//cout << ++count << endl;
+			writer.write(pac->data, DATALENGTH);
+			sendACK(s, false, to, tolen);
+			if ((pac->flag[0] & FLAG_FEND) == FLAG_FEND)//如果接收到的是文件末尾，退出
+				break;
+		}
+		seq = (seq + 1) % 2;
+		delete pac;
+		pac = new package();
+	}
+	delete pac;
+	writer.close();
 }
