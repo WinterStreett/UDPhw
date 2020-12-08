@@ -39,12 +39,12 @@ struct package {
 	unsigned int seq;//序号
 	unsigned int ack;//确认号
 	char flag[2] = { 0,0 };//标志位
-	short window;//接收窗口
+	unsigned short window;//接收窗口
 	unsigned short checksum;//校验和
-	char unknown[2] = { 0,0 };//待定
+	unsigned short taillen;
 	char data[DATALENGTH] = {};//数据
 	package() {
-		seq = ack = window = checksum = 0;
+		seq = ack = window = checksum = taillen = 0;
 	}
 };
 const int packageSize = sizeof(package);
@@ -101,10 +101,10 @@ int main() {
 	//接收端要先处于recv阻塞状态
 	while (1) {
 		package* pac = new package();
-		char* buf = new char[packageSize];
-		recvfrom(recver_socket, buf, packageSize, 0, (sockaddr*)&sender_addr, &len);
-		memcpy(pac, buf, packageSize);
-		if ((checksum(buf, packageSize) == 0) && (pac->flag[0] & FLAG_SYN) == FLAG_SYN)//完好的SYN
+		//char* buf = new char[packageSize];
+		recvfrom(recver_socket, (char*)pac, packageSize, 0, (sockaddr*)&sender_addr, &len);
+		//memcpy(pac, buf, packageSize);
+		if ((checksum((char*)pac, packageSize) == 0) && (pac->flag[0] & FLAG_SYN) == FLAG_SYN)//完好的SYN
 		{
 			package* spac = new package();
 			char* sbuf = new char[packageSize];
@@ -112,19 +112,19 @@ int main() {
 			spac->flag[0] |= FLAG_SYN;
 			ack = pac->seq;//将接收方的ack设为发送方的seq
 			spac->ack = ack;
-			memcpy(sbuf, spac, packageSize);
-			spac->checksum = checksum(sbuf, packageSize);
-			memcpy(sbuf, spac, packageSize);
+			//memcpy(sbuf, spac, packageSize);
+			spac->checksum = checksum((char*)spac, packageSize);
+			//memcpy(sbuf, spac, packageSize);
 
-			sendto(recver_socket, sbuf, packageSize, 0, (sockaddr*)&sender_addr, len);//第二次握手
+			sendto(recver_socket, (char*)spac, packageSize, 0, (sockaddr*)&sender_addr, len);//第二次握手
 			delete spac;
 			delete[]sbuf;
 			delete pac;
-			delete[]buf;
+			//delete[]buf;
 			break;
 		}
 		delete pac;
-		delete[]buf;
+		//delete[]buf;
 	}
 	cout << "两次握手成功！" << endl;
 	cout << "两次握手后，recver的ack=" << ack << endl;
@@ -138,6 +138,7 @@ int main() {
 
 	closesocket(recver_socket);
 	WSACleanup();
+	system("pause");
 	return 0;
 }
 
@@ -160,7 +161,7 @@ void sendACK(SOCKET s,bool redun, const sockaddr* to, int tolen) {
 /*	功能：向目的地址发送一个ACK  
 *	redun：为真时，说明要发送的是一个冗余ACK，ack值不能变
 */
-	char* sbuf = new char[packageSize];
+
 	package* ack_pac = new package();
 	ack_pac->flag[0] |= FLAG_ACK;//设置ACK标志位
 	if (redun)
@@ -169,20 +170,23 @@ void sendACK(SOCKET s,bool redun, const sockaddr* to, int tolen) {
 	}
 	else
 		ack_pac->ack = ack;
-	memcpy(sbuf, ack_pac, packageSize);
-	ack_pac->checksum = checksum(sbuf, packageSize);//填上校验和
-	memcpy(sbuf, ack_pac, packageSize);
-	sendto(s, sbuf, packageSize, 0, to, tolen);
-	delete[]sbuf;
+
+	ack_pac->checksum = checksum((char*)ack_pac, packageSize);//填上校验和
+	
+	sendto(s, (char*)ack_pac, packageSize, 0, to, tolen);
+	//delete[]sbuf;
 	delete ack_pac;
 }
 
 void recvOneFile(SOCKET s, sockaddr* to, int tolen) {
-	char buf[packageSize] = {};
+	
 	package* pac = new package();
 	char filename[FILENAMELEN] = {};
+	char* file;
+	unsigned int filelen;
+
 	short missCount = 0;
-	////赋值文件名
+
 	struct timeval timeout = { TIMEOUTS,TIMEOUTMS };
 	fd_set fdr;
 	FD_ZERO(&fdr);
@@ -193,7 +197,7 @@ void recvOneFile(SOCKET s, sockaddr* to, int tolen) {
 		ret = select(s, &fdr, NULL, NULL, &timeout);
 		if (ret < 0) {
 			cout << "发生select错误！接收失败！" << endl;
-			delete[]buf;
+	
 			delete pac;
 			return;
 		}
@@ -202,17 +206,20 @@ void recvOneFile(SOCKET s, sockaddr* to, int tolen) {
 			if (missCount == MISSLIMT)
 			{
 				//cout << "文件头部信息接收失败！放弃传输！" << endl;
-				delete[]buf;
+	
 				delete pac;
 				exit(-1);
 			}
 		}
 		else {
 			//从源地址接收文件名数据包
-			recvfrom(s, buf, packageSize, 0, to, &tolen);
-			memcpy(pac, buf, packageSize);
+			recvfrom(s, (char*)pac, packageSize, 0, to, &tolen);
+	
 			if (((pac->flag[0] & FLAG_FHEAD) == FLAG_FHEAD) && pac->seq == ack) {
-				memcpy(filename, pac->data, FILENAMELEN);
+				memcpy(&filelen, pac->data, 4);
+
+				memcpy(filename, pac->data + 4, FILENAMELEN);
+				file = new char[filelen];
 				break;
 			}
 		}
@@ -225,12 +232,13 @@ void recvOneFile(SOCKET s, sockaddr* to, int tolen) {
 
 	sendACK(s, false, to, tolen);//发送ACK
 	ackNext();
-	//int count = 0;
+	int count = 0;//统计包的数量
+	int writelen;
 	//cout << "recver开始接收有效负荷时的ack：" << ack << endl;
 	while (1) {//接收文件循环
-		recvfrom(s, buf, packageSize, 0, to, &tolen);
-		memcpy(pac, buf, packageSize);
-		if ((checksum(buf, packageSize) != 0) || (pac->seq != ack))//如果这个包被损坏了，或者不是接收方想要的包
+		recvfrom(s, (char*)pac, packageSize, 0, to, &tolen);
+		//memcpy(pac, buf, packageSize);
+		if ((checksum((char*)pac, packageSize) != 0) || (pac->seq != ack))//如果这个包被损坏了，或者不是接收方想要的包
 		{
 			//重发ACK包
 			//cout << "重发ACK" << endl;
@@ -238,17 +246,30 @@ void recvOneFile(SOCKET s, sockaddr* to, int tolen) {
 			sendACK(s, true, to, tolen);
 		}
 		else if (pac->seq == ack) {//如果接收到了正确的包，写入文件返回正确的ACK
-			//cout << ++count << endl;
-			writer.write(pac->data, DATALENGTH);
+			//writer.write(pac->data, DATALENGTH);
 			sendACK(s, false, to, tolen);
 			ackNext();
-			if ((pac->flag[0] & FLAG_FEND) == FLAG_FEND)//如果接收到的是文件末尾，退出
+			if ((pac->flag[0] & FLAG_FEND) == FLAG_FEND)//如果接收到的是文件末尾，写入文件退出
+			{
+				writelen = count * DATALENGTH;
+				writer.write(file, writelen);
+				writer.write(pac->data, pac->taillen);
+
 				break;
+			}
+			else//不是文件结尾，正常写入file
+			{
+				writelen = count * DATALENGTH;
+				memcpy(file + writelen, pac->data, DATALENGTH);
+				count++;
+			}
 		}
 		//ackNext();
 		delete pac;
 		pac = new package();
 	}
+
+	delete[]file;
 	delete pac;
 	writer.close();
 	cout << "成功接收第" << ++fileCount << "个文件!" << endl;

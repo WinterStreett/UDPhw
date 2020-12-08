@@ -15,8 +15,8 @@ using namespace std;
 #define RECVER_PORT 4000//接收者的端口号
 #define RECVER_ADDR "127.0.0.1"//接收者的IP地址
 #define FILENAMELEN 50 //文件名的长度限制
-#define TIMEOUTS 1 //超时重传间隔
-#define TIMEOUTMS 0
+#define TIMEOUTS 0 //超时重传间隔 单位：秒
+#define TIMEOUTMS 500000 //超时间隔 单位：微秒
 #define MISSLIMT 5//超时重传的最大次数限制
 
 //标志位宏，位数是按从低到高
@@ -42,12 +42,12 @@ struct package {
 	unsigned int seq;//序号
 	unsigned int ack;//确认号
 	char flag[2] = {0,0};//标志位
-	short window;//接收窗口
+	unsigned short window;//接收窗口
 	unsigned short checksum;//校验和
-	char unknown[2] = { 0,0 };//待定
+	unsigned short taillen;
 	char data[DATALENGTH] = {};//数据
 	package() {
-		seq = ack = window = checksum = 0;
+		seq = ack = window = checksum = taillen = 0;
 	}
 };
 //一些全局变量
@@ -106,14 +106,12 @@ int main() {
 	//5. 两次握手 
 	//第一次握手
 	package* pac = new package();
-	char* buf = new char[packageSize];
 	pac->seq = seq;
 	pac->flag[0] |= FLAG_SYN;
-	memcpy(buf, pac, packageSize);
-	pac->checksum = checksum(buf, packageSize);
-	memcpy(buf, pac, packageSize);
+
+	pac->checksum = checksum((char*)pac, packageSize);
 	//发送第一个包,sendAndWait里面应该已经接收了服务器返回的第二次握手ACK包
-	sendAndWait(sender_socket, buf, packageSize, 0, (sockaddr*)&recver_addr, addr_len);//发送失败的话会尝试几次，直到最大次数限制
+	sendAndWait(sender_socket, (char*)pac, packageSize, 0, (sockaddr*)&recver_addr, addr_len);//发送失败的话会尝试几次，直到最大次数限制
 	cout << "两次握手完成！" << endl;
 
 	cout << "两次握手后，reader的seq=" << seq << endl;
@@ -130,9 +128,9 @@ int main() {
 
 	//清理资源占用
 	delete pac;
-	delete[]buf;
 	closesocket(sender_socket);
 	WSACleanup();
+	system("pause");
 	return 0;
 }
 
@@ -171,13 +169,11 @@ int sendAndWait(SOCKET s, const char* buf, int len, int flags, const sockaddr* t
 	//下面是等待ACK
 	while (1) {
 		//新建两个变量，用来承接收到的数据
-		char* sbuf = new char[packageSize];
 		package* recv_pac = new package();
 		ret = select(s, &fdr, NULL, NULL, &timeout);
 		if (ret < 0)//发生错误
 		{
 			cout << "select发生错误！" << endl;
-			delete[]sbuf;
 			delete recv_pac;
 			closesocket(s);
 			WSACleanup();
@@ -187,19 +183,17 @@ int sendAndWait(SOCKET s, const char* buf, int len, int flags, const sockaddr* t
 		{
 			sendto(s, buf, len, flags, to, tolen);//重发
 			missCount++;
-			//cout << "第" << missCount << "次超时！" << endl;
+			cout << "第" << missCount << "次超时！" << endl;
 			if (missCount == MISSLIMT) {
-				delete[]sbuf;
 				delete recv_pac;
 				//cout << "超时次数到达上限，发送失败！" << endl;
 				exit(-1);
 			}
 		}
 		else {
-			recvfrom(s, sbuf, packageSize, 0, (sockaddr*)&from, &tolen);
-			memcpy(recv_pac, sbuf, packageSize);
+			recvfrom(s, (char*)recv_pac, packageSize, 0, (sockaddr*)&from, &tolen);
 			//检查这个收到的包是否是受损的，以及ACK字段
-			if ((checksum(sbuf, packageSize) != 0) || (((recv_pac->flag[0] & FLAG_ACK) == FLAG_ACK) && recv_pac->ack != seq)) {
+			if ((checksum((char*)recv_pac, packageSize) != 0) || (((recv_pac->flag[0] & FLAG_ACK) == FLAG_ACK) && recv_pac->ack != seq)) {
 				//如果接收到的包受损 或者 是冗余ACK 那么重发一次
 				sendto(s, buf, len, flags, to, tolen);
 			}
@@ -208,7 +202,6 @@ int sendAndWait(SOCKET s, const char* buf, int len, int flags, const sockaddr* t
 				break;
 			}
 		}
-		delete[]sbuf;
 		delete recv_pac;
 	}
 }
@@ -220,57 +213,69 @@ void sendOneFile(SOCKET s, char* filename, const sockaddr* to, int tolen) {
 	unsigned int pacCount = 0;//记录发送的数据包个数
 	clock_t start, end;//计时器
 	package* pac = new package();
-	char buf[packageSize] = {};
+	unsigned int filelen;//文件长度
+	unsigned int pacNum;//需要的包总数量
+	unsigned short taillen;
+	char* file;//保存文件的数组
+
+	//读取整个文件
+	ifstream reader;
+	reader.open(filename, ios::binary);
+	reader.seekg(0, ios::end);
+	filelen = reader.tellg();
+	reader.seekg(0, ios::beg);
+	file = new char[filelen];//file中保存着文件数据
+	reader.read(file, filelen);
+	pacNum = filelen / DATALENGTH;//可能有尾部
+	taillen = filelen % DATALENGTH;//尾部剩余长度
 
 	//首先将文件名发给接收端
-	memcpy(pac->data, filename, FILENAMELEN);
+	memcpy(pac->data, &filelen, 4);//数据部分的前4个字节是文件长度
+	memcpy(pac->data+4, filename, FILENAMELEN);//数据部分从4开始是文件名
 	pac->seq = seq;
 	pac->flag[0] |= FLAG_FHEAD;
-	memcpy(buf, pac, packageSize);
-	pac->checksum = checksum(buf, packageSize);
-	memcpy(buf, pac, packageSize);
+	pac->checksum = checksum((char*)pac, packageSize);
 	start = clock();
-	sendAndWait(s, buf, packageSize, 0, to, tolen);
+	sendAndWait(s, (char*)pac, packageSize, 0, to, tolen);
+	//发送文件名成功！开始读取文件
 	seqNext();
 	delete pac;
 	pac = new package();
 
-	//下面打开文件，读取，发送
-	ifstream reader;
-	reader.open(filename, ios::binary);
-	//cout << "sender开始发送有效负荷时的seq：" << seq << endl;
-	while (reader.read(pac->data, DATALENGTH)) {//读取文件，每次读取DATALENGTH个字节的数据，发送
-		memcpy(buf, pac, packageSize);
-		//写入校验和以及序号
+
+	unsigned int di;
+	for (int i = 0; i < pacNum; i++)
+	{
+		//从file中读取一块数据，长度为DATALENGTH
+		di = i * DATALENGTH;
+		memcpy(pac->data, file + di, DATALENGTH);
+		//将数据包设置好
 		pac->seq = seq;
-		memcpy(buf, pac, packageSize);
-		pac->checksum = checksum(buf, packageSize);
-		memcpy(buf, pac, packageSize);
-		sendAndWait(s, buf, packageSize, 0, to, tolen);
+		pac->checksum = checksum((char*)pac, packageSize);
+		//发送数据包，等待确认
+		sendAndWait(s, (char*)pac, packageSize, 0, to, tolen);
 		delete pac;
 		pac = new package();//更新pac指针
 		seqNext();//模2的前进
 		pacCount++;//数据包数量加一
 	}
-	//最后把剩余的尾部也发出去
-	memcpy(buf, pac, packageSize);
-	//写入校验和以及序号
+	//处理最后一小段
+	int a = filelen - taillen;
+	memcpy(pac->data,file+ a, taillen);
 	pac->seq = seq;
 	pac->flag[0] |= FLAG_FEND;//将FEND标志位置位
-	memcpy(buf, pac, packageSize);
-	pac->checksum = checksum(buf, packageSize);
-	memcpy(buf, pac, packageSize);
-	//发送这个包
-	sendAndWait(s, buf, packageSize, 0, to, tolen);
-	seqNext();//模2的前进
-
-	pacCount++;
-
+	pac->taillen = taillen;
+	pac->checksum = checksum((char*)pac, packageSize);
+	sendAndWait(s, (char*)pac, packageSize, 0, to, tolen);
 	end = clock();
+	seqNext();//模2的前进
+	pacCount++;//数据包数量加一
+
 	cout << "成功发送第"<<++fileCount<<"个文件！" << endl;
 	cout << "用时：" << end - start << "毫秒" << "	" << "吞吐率：";
 	Throughput(pacCount, end - start);
 	//清理资源占用
+	delete[]file;
 	delete pac;
 	reader.close();
 	//cout << "seq:" << seq << endl;
