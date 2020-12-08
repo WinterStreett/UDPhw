@@ -14,10 +14,12 @@ using namespace std;
 #define RECVER_PORT 4000//接收者的端口号
 #define RECVER_ADDR "127.0.0.1"//接收者的IP地址
 #define FILENAMELEN 50 //文件名的长度限制
-#define TIMEOUT 1 //超时重传间隔
+#define TIMEOUTS 1//超时重传间隔 秒
+#define TIMEOUTMS 0//超时重传间隔 毫秒
 #define MISSLIMT 5//超时重传的最大次数限制
 
 //标志位宏，位数是按从低到高
+#define FLAG_FHEAD 0x80 //第8位 文件名包
 #define FLAG_FEND 0x40//第7位
 #define FLAG_ACK 0x10//第5位
 #define FLAG_SYN 0x2//第2位
@@ -46,16 +48,15 @@ struct package {
 	}
 };
 const int packageSize = sizeof(package);
-unsigned int seq = 0;//记录自己想要收到的下一个包的序号
+unsigned int ack = 0;//记录自己想要收到的下一个包的序号
 unsigned short fileCount = 0;
 
 
 unsigned int checksum(const char* s, const int length);//差错检测
 void sendACK(SOCKET s, bool redun, const sockaddr* to, int tolen);//发送一个ACK包
 void recvOneFile(SOCKET s, sockaddr* to, int tolen);//接收一个文件
-int sendAndWait(SOCKET s, const char* buf, int len, int flags, const sockaddr* to, int tolen);//向一个目的地址发送一个数据包并等待ACK
-void seqNext() {
-	seq = (seq + 1) % 2;
+void ackNext() {
+	ack = (ack + 1) % 2;
 }
 
 int main() {
@@ -109,12 +110,13 @@ int main() {
 			char* sbuf = new char[packageSize];
 			spac->flag[0] |= FLAG_ACK;
 			spac->flag[0] |= FLAG_SYN;
-			spac->ack = seq;
+			ack = pac->seq;//将接收方的ack设为发送方的seq
+			spac->ack = ack;
 			memcpy(sbuf, spac, packageSize);
 			spac->checksum = checksum(sbuf, packageSize);
 			memcpy(sbuf, spac, packageSize);
-			sendAndWait(recver_socket, sbuf, packageSize, 0, (sockaddr*)&sender_addr, len);
-			seqNext();
+
+			sendto(recver_socket, sbuf, packageSize, 0, (sockaddr*)&sender_addr, len);//第二次握手
 			delete spac;
 			delete[]sbuf;
 			delete pac;
@@ -124,8 +126,8 @@ int main() {
 		delete pac;
 		delete[]buf;
 	}
-	cout << "三次握手成功！" << endl;
-
+	cout << "两次握手成功！" << endl;
+	cout << "两次握手后，recver的ack=" << ack << endl;
 	 //6. rdt2.2接收端
 	//第一个包包含文件名，单独识别
 	recvOneFile(recver_socket, (sockaddr*)&sender_addr, len);
@@ -156,15 +158,17 @@ unsigned int checksum(const char* s, const int length) {
 
 void sendACK(SOCKET s,bool redun, const sockaddr* to, int tolen) {
 /*	功能：向目的地址发送一个ACK  
-*	redun：为真时，说明要发送的是一个冗余ACK，seq值不能变
+*	redun：为真时，说明要发送的是一个冗余ACK，ack值不能变
 */
 	char* sbuf = new char[packageSize];
 	package* ack_pac = new package();
 	ack_pac->flag[0] |= FLAG_ACK;//设置ACK标志位
-	if(redun)
-		ack_pac->ack = (seq + 1) % 2;
+	if (redun)
+	{
+		ack_pac->ack = (ack + 1) % 2;
+	}
 	else
-		ack_pac->ack = seq;
+		ack_pac->ack = ack;
 	memcpy(sbuf, ack_pac, packageSize);
 	ack_pac->checksum = checksum(sbuf, packageSize);//填上校验和
 	memcpy(sbuf, ack_pac, packageSize);
@@ -177,95 +181,76 @@ void recvOneFile(SOCKET s, sockaddr* to, int tolen) {
 	char buf[packageSize] = {};
 	package* pac = new package();
 	char filename[FILENAMELEN] = {};
-	//从源地址接收文件名数据包
-	recvfrom(s, buf, packageSize, 0, to, &tolen);
-	memcpy(pac, buf, packageSize);
-	//赋值文件名
-	memcpy(filename, pac->data, FILENAMELEN);
+	short missCount = 0;
+	////赋值文件名
+	struct timeval timeout = { TIMEOUTS,TIMEOUTMS };
+	fd_set fdr;
+	FD_ZERO(&fdr);
+	FD_SET(s, &fdr);
+	int ret ;
+	while (1)//必须先等到一个FLAG_FHEAD位为1的包
+	{
+		ret = select(s, &fdr, NULL, NULL, &timeout);
+		if (ret < 0) {
+			cout << "发生select错误！接收失败！" << endl;
+			delete[]buf;
+			delete pac;
+			return;
+		}
+		else if (ret == 0) {
+			//cout << "等待文件头部信息超时" << ++missCount << "次" << endl;
+			if (missCount == MISSLIMT)
+			{
+				//cout << "文件头部信息接收失败！放弃传输！" << endl;
+				delete[]buf;
+				delete pac;
+				exit(-1);
+			}
+		}
+		else {
+			//从源地址接收文件名数据包
+			recvfrom(s, buf, packageSize, 0, to, &tolen);
+			memcpy(pac, buf, packageSize);
+			if (((pac->flag[0] & FLAG_FHEAD) == FLAG_FHEAD) && pac->seq == ack) {
+				memcpy(filename, pac->data, FILENAMELEN);
+				break;
+			}
+		}
+	}
+	delete pac;
+	pac = new package();
 
 	ofstream writer;
 	writer.open(filename, ios::binary);//打开一个文件
 
 	sendACK(s, false, to, tolen);//发送ACK
-	seqNext();
+	ackNext();
 	//int count = 0;
-	while (1) {
+	//cout << "recver开始接收有效负荷时的ack：" << ack << endl;
+	while (1) {//接收文件循环
 		recvfrom(s, buf, packageSize, 0, to, &tolen);
 		memcpy(pac, buf, packageSize);
-		if ((checksum(buf, packageSize) != 0) || (pac->seq != seq))//如果这个包被损坏了，或者不是接收方想要的包
+		if ((checksum(buf, packageSize) != 0) || (pac->seq != ack))//如果这个包被损坏了，或者不是接收方想要的包
 		{
 			//重发ACK包
+			//cout << "重发ACK" << endl;
+
 			sendACK(s, true, to, tolen);
 		}
-		else if (pac->seq == seq) {//如果接收到了正确的包，写入文件返回正确的ACK
+		else if (pac->seq == ack) {//如果接收到了正确的包，写入文件返回正确的ACK
 			//cout << ++count << endl;
 			writer.write(pac->data, DATALENGTH);
 			sendACK(s, false, to, tolen);
+			ackNext();
 			if ((pac->flag[0] & FLAG_FEND) == FLAG_FEND)//如果接收到的是文件末尾，退出
 				break;
 		}
-		seqNext();
+		//ackNext();
 		delete pac;
 		pac = new package();
 	}
 	delete pac;
 	writer.close();
 	cout << "成功接收第" << ++fileCount << "个文件!" << endl;
-}
-
-int sendAndWait(SOCKET s, const char* buf, int len, int flags, const sockaddr* to, int tolen) {
-	/*	功能：向指定目的地发送一个数据包，并等待正确的ACK,ACK确认后才能返回
-	*/
-	int missCount = 0;
-	SOCKADDR_IN from;
-	sendto(s, buf, len, flags, to, tolen);
-	//下面是等待ACK
-	while (1) {
-		//新建两个变量，用来承接收到的数据
-		char* sbuf = new char[packageSize];
-		package* recv_pac = new package();
-		//接收返回的包
-		//使用select函数来达到计时效果
-		struct timeval timeout = { TIMEOUT,0 };
-		fd_set fdr;
-		FD_ZERO(&fdr);
-		FD_SET(s, &fdr);
-		int ret = select(s, &fdr, NULL, NULL, &timeout);
-		if (ret < 0)//发生错误
-		{
-			cout << "select发生错误！" << endl;
-			delete[]sbuf;
-			delete recv_pac;
-			closesocket(s);
-			WSACleanup();
-			return -1;
-		}
-		else if (ret == 0)//等待超时
-		{
-			sendto(s, buf, len, flags, to, tolen);//重发
-			missCount++;
-			cout << "第" << missCount << "次超时！" << endl;
-			if (missCount == MISSLIMT) {
-				delete[]sbuf;
-				delete recv_pac;
-				cout << "超时次数到达上限，发送失败！" << endl;
-				exit(-1);
-			}
-		}
-		else {
-			recvfrom(s, sbuf, packageSize, 0, (sockaddr*)&from, &tolen);
-			memcpy(recv_pac, sbuf, packageSize);
-			//检查这个收到的包是否是受损的，以及ACK字段
-			if ((checksum(sbuf, packageSize) != 0) || (((recv_pac->flag[0] & FLAG_ACK) == FLAG_ACK) && recv_pac->ack != seq)) {
-				//如果接收到的包受损 或者 是冗余ACK 那么重发一次
-				sendto(s, buf, len, flags, to, tolen);
-			}
-			else if (((recv_pac->flag[0] & FLAG_ACK) == FLAG_ACK) && (recv_pac->ack == seq)) {
-				//如果收到的是正确的ACK，那么说明发送的包到达接收方，可以发下一个包了
-				break;
-			}
-		}
-		delete[]sbuf;
-		delete recv_pac;
-	}
+	//cout << "ack:" << ack << endl;
 }

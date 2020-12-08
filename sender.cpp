@@ -15,11 +15,13 @@ using namespace std;
 #define RECVER_PORT 4000//接收者的端口号
 #define RECVER_ADDR "127.0.0.1"//接收者的IP地址
 #define FILENAMELEN 50 //文件名的长度限制
-#define TIMEOUT 1 //超时重传间隔
+#define TIMEOUTS 1 //超时重传间隔
+#define TIMEOUTMS 0
 #define MISSLIMT 5//超时重传的最大次数限制
 
 //标志位宏，位数是按从低到高
 
+#define FLAG_FHEAD 0x80 //第8位 文件名包
 #define FLAG_FEND 0x40//第7位 文件是否传输完毕
 #define FLAG_ACK 0x10//第5位 
 #define FLAG_SYN 0x2//第2位
@@ -112,20 +114,10 @@ int main() {
 	memcpy(buf, pac, packageSize);
 	//发送第一个包,sendAndWait里面应该已经接收了服务器返回的第二次握手ACK包
 	sendAndWait(sender_socket, buf, packageSize, 0, (sockaddr*)&recver_addr, addr_len);//发送失败的话会尝试几次，直到最大次数限制
-	seqNext();
-	delete pac;
-	delete[]buf;
-	//发送第三个包
-	pac = new package();
-	buf = new char[packageSize];
-	pac->flag[0] |= FLAG_ACK;
-	pac->seq = seq;
-	memcpy(buf, pac, packageSize);
-	pac->checksum = checksum(buf, packageSize);
-	memcpy(buf, pac, packageSize);
-	sendto(sender_socket, buf, packageSize, 0, (sockaddr*)&recver_addr, addr_len);
-	cout << "三次握手完成！" << endl;
+	cout << "两次握手完成！" << endl;
 
+	cout << "两次握手后，reader的seq=" << seq << endl;
+	
 	//6. rdt2.2
 	char filename1[FILENAMELEN] = "temp//1.jpg";
 	char filename2[FILENAMELEN] = "temp//2.jpg";
@@ -171,18 +163,17 @@ int sendAndWait(SOCKET s, const char* buf, int len, int flags, const sockaddr* t
 	int missCount = 0;
 	SOCKADDR_IN from;
 	sendto(s, buf, len, flags, to, tolen);
+	struct timeval timeout = { TIMEOUTS,TIMEOUTMS };
+	fd_set fdr;
+	FD_ZERO(&fdr);
+	FD_SET(s, &fdr);
+	int ret;
 	//下面是等待ACK
 	while (1) {
 		//新建两个变量，用来承接收到的数据
 		char* sbuf = new char[packageSize];
 		package* recv_pac = new package();
-		//接收返回的包
-		//使用select函数来达到计时效果
-		struct timeval timeout = { TIMEOUT,0 };
-		fd_set fdr;
-		FD_ZERO(&fdr);
-		FD_SET(s, &fdr);
-		int ret = select(s, &fdr, NULL, NULL, &timeout);
+		ret = select(s, &fdr, NULL, NULL, &timeout);
 		if (ret < 0)//发生错误
 		{
 			cout << "select发生错误！" << endl;
@@ -196,11 +187,11 @@ int sendAndWait(SOCKET s, const char* buf, int len, int flags, const sockaddr* t
 		{
 			sendto(s, buf, len, flags, to, tolen);//重发
 			missCount++;
-			cout << "第" << missCount << "次超时！" << endl;
+			//cout << "第" << missCount << "次超时！" << endl;
 			if (missCount == MISSLIMT) {
 				delete[]sbuf;
 				delete recv_pac;
-				cout << "超时次数到达上限，发送失败！" << endl;
+				//cout << "超时次数到达上限，发送失败！" << endl;
 				exit(-1);
 			}
 		}
@@ -228,25 +219,26 @@ void sendOneFile(SOCKET s, char* filename, const sockaddr* to, int tolen) {
 */
 	unsigned int pacCount = 0;//记录发送的数据包个数
 	clock_t start, end;//计时器
-
 	package* pac = new package();
 	char buf[packageSize] = {};
+
 	//首先将文件名发给接收端
 	memcpy(pac->data, filename, FILENAMELEN);
 	pac->seq = seq;
+	pac->flag[0] |= FLAG_FHEAD;
 	memcpy(buf, pac, packageSize);
 	pac->checksum = checksum(buf, packageSize);
 	memcpy(buf, pac, packageSize);
-
-
 	start = clock();
 	sendAndWait(s, buf, packageSize, 0, to, tolen);
 	seqNext();
 	delete pac;
 	pac = new package();
+
 	//下面打开文件，读取，发送
 	ifstream reader;
 	reader.open(filename, ios::binary);
+	//cout << "sender开始发送有效负荷时的seq：" << seq << endl;
 	while (reader.read(pac->data, DATALENGTH)) {//读取文件，每次读取DATALENGTH个字节的数据，发送
 		memcpy(buf, pac, packageSize);
 		//写入校验和以及序号
@@ -270,6 +262,7 @@ void sendOneFile(SOCKET s, char* filename, const sockaddr* to, int tolen) {
 	memcpy(buf, pac, packageSize);
 	//发送这个包
 	sendAndWait(s, buf, packageSize, 0, to, tolen);
+	seqNext();//模2的前进
 
 	pacCount++;
 
@@ -280,6 +273,7 @@ void sendOneFile(SOCKET s, char* filename, const sockaddr* to, int tolen) {
 	//清理资源占用
 	delete pac;
 	reader.close();
+	//cout << "seq:" << seq << endl;
 }
 
 void Throughput(unsigned int pacs, clock_t time) {//计算吞吐率，自动补上单位输出
