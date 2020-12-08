@@ -2,6 +2,7 @@
 #include<fstream>
 #include<winsock.h>
 #include<string.h>
+#include<ctime>
 #pragma comment(lib,"ws2_32.lib")
 using namespace std;
 #pragma warning(disable:4996)
@@ -13,7 +14,8 @@ using namespace std;
 #define RECVER_PORT 4000//接收者的端口号
 #define RECVER_ADDR "127.0.0.1"//接收者的IP地址
 #define FILENAMELEN 50 //文件名的长度限制
-
+#define TIMEOUT 1 //超时重传间隔
+#define MISSLIMT 5//超时重传的最大次数限制
 
 //标志位宏，位数是按从低到高
 #define FLAG_FEND 0x40//第7位
@@ -45,11 +47,16 @@ struct package {
 };
 const int packageSize = sizeof(package);
 unsigned int seq = 0;//记录自己想要收到的下一个包的序号
+unsigned short fileCount = 0;
 
 
 unsigned int checksum(const char* s, const int length);//差错检测
 void sendACK(SOCKET s, bool redun, const sockaddr* to, int tolen);//发送一个ACK包
 void recvOneFile(SOCKET s, sockaddr* to, int tolen);//接收一个文件
+int sendAndWait(SOCKET s, const char* buf, int len, int flags, const sockaddr* to, int tolen);//向一个目的地址发送一个数据包并等待ACK
+void seqNext() {
+	seq = (seq + 1) % 2;
+}
 
 int main() {
 	//1. 初始化Socket DLL
@@ -66,6 +73,8 @@ int main() {
 	recver_addr.sin_family = AF_INET;
 	recver_addr.sin_addr.s_addr = inet_addr(RECVER_ADDR);
 	recver_addr.sin_port = htons(RECVER_PORT);
+
+	int len = sizeof(sender_addr);
 
 	//3. 创建接收端数据报socket
 	recver_socket = socket(AF_INET, SOCK_DGRAM, 0);
@@ -87,21 +96,40 @@ int main() {
 		cout << "接收端IP地址：" << RECVER_ADDR << endl << "接收端绑定端口：" << RECVER_PORT << endl;
 	}
 
-	//5. 简化版三次握手
-	int len = sizeof(sender_addr);
-	char handshake[1500] = {};
-	if (recvfrom(recver_socket, handshake, packageSize, 0, (sockaddr*)&sender_addr, &len) == SOCKET_ERROR) {
-		cout << "三次握手失败！" << endl;
-		closesocket(recver_socket);
-		WSACleanup();
-		return -1;
+	//5. 两次握手
+	//接收端要先处于recv阻塞状态
+	while (1) {
+		package* pac = new package();
+		char* buf = new char[packageSize];
+		recvfrom(recver_socket, buf, packageSize, 0, (sockaddr*)&sender_addr, &len);
+		memcpy(pac, buf, packageSize);
+		if ((checksum(buf, packageSize) == 0) && (pac->flag[0] & FLAG_SYN) == FLAG_SYN)//完好的SYN
+		{
+			package* spac = new package();
+			char* sbuf = new char[packageSize];
+			spac->flag[0] |= FLAG_ACK;
+			spac->flag[0] |= FLAG_SYN;
+			spac->ack = seq;
+			memcpy(sbuf, spac, packageSize);
+			spac->checksum = checksum(sbuf, packageSize);
+			memcpy(sbuf, spac, packageSize);
+			sendAndWait(recver_socket, sbuf, packageSize, 0, (sockaddr*)&sender_addr, len);
+			seqNext();
+			delete spac;
+			delete[]sbuf;
+			delete pac;
+			delete[]buf;
+			break;
+		}
+		delete pac;
+		delete[]buf;
 	}
-	else {
-		cout << handshake << endl;
-	}
+	cout << "三次握手成功！" << endl;
 
 	 //6. rdt2.2接收端
 	//第一个包包含文件名，单独识别
+	recvOneFile(recver_socket, (sockaddr*)&sender_addr, len);
+	recvOneFile(recver_socket, (sockaddr*)&sender_addr, len);
 	recvOneFile(recver_socket, (sockaddr*)&sender_addr, len);
 	recvOneFile(recver_socket, (sockaddr*)&sender_addr, len);
 
@@ -159,7 +187,7 @@ void recvOneFile(SOCKET s, sockaddr* to, int tolen) {
 	writer.open(filename, ios::binary);//打开一个文件
 
 	sendACK(s, false, to, tolen);//发送ACK
-	seq = (seq + 1) % 2;
+	seqNext();
 	//int count = 0;
 	while (1) {
 		recvfrom(s, buf, packageSize, 0, to, &tolen);
@@ -176,10 +204,68 @@ void recvOneFile(SOCKET s, sockaddr* to, int tolen) {
 			if ((pac->flag[0] & FLAG_FEND) == FLAG_FEND)//如果接收到的是文件末尾，退出
 				break;
 		}
-		seq = (seq + 1) % 2;
+		seqNext();
 		delete pac;
 		pac = new package();
 	}
 	delete pac;
 	writer.close();
+	cout << "成功接收第" << ++fileCount << "个文件!" << endl;
+}
+
+int sendAndWait(SOCKET s, const char* buf, int len, int flags, const sockaddr* to, int tolen) {
+	/*	功能：向指定目的地发送一个数据包，并等待正确的ACK,ACK确认后才能返回
+	*/
+	int missCount = 0;
+	SOCKADDR_IN from;
+	sendto(s, buf, len, flags, to, tolen);
+	//下面是等待ACK
+	while (1) {
+		//新建两个变量，用来承接收到的数据
+		char* sbuf = new char[packageSize];
+		package* recv_pac = new package();
+		//接收返回的包
+		//使用select函数来达到计时效果
+		struct timeval timeout = { TIMEOUT,0 };
+		fd_set fdr;
+		FD_ZERO(&fdr);
+		FD_SET(s, &fdr);
+		int ret = select(s, &fdr, NULL, NULL, &timeout);
+		if (ret < 0)//发生错误
+		{
+			cout << "select发生错误！" << endl;
+			delete[]sbuf;
+			delete recv_pac;
+			closesocket(s);
+			WSACleanup();
+			return -1;
+		}
+		else if (ret == 0)//等待超时
+		{
+			sendto(s, buf, len, flags, to, tolen);//重发
+			missCount++;
+			cout << "第" << missCount << "次超时！" << endl;
+			if (missCount == MISSLIMT) {
+				delete[]sbuf;
+				delete recv_pac;
+				cout << "超时次数到达上限，发送失败！" << endl;
+				exit(-1);
+			}
+		}
+		else {
+			recvfrom(s, sbuf, packageSize, 0, (sockaddr*)&from, &tolen);
+			memcpy(recv_pac, sbuf, packageSize);
+			//检查这个收到的包是否是受损的，以及ACK字段
+			if ((checksum(sbuf, packageSize) != 0) || (((recv_pac->flag[0] & FLAG_ACK) == FLAG_ACK) && recv_pac->ack != seq)) {
+				//如果接收到的包受损 或者 是冗余ACK 那么重发一次
+				sendto(s, buf, len, flags, to, tolen);
+			}
+			else if (((recv_pac->flag[0] & FLAG_ACK) == FLAG_ACK) && (recv_pac->ack == seq)) {
+				//如果收到的是正确的ACK，那么说明发送的包到达接收方，可以发下一个包了
+				break;
+			}
+		}
+		delete[]sbuf;
+		delete recv_pac;
+	}
 }
