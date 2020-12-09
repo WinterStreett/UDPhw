@@ -9,10 +9,13 @@ using namespace std;
 
 #define HEADLENGTH 16//报文头部的长度
 #define DATALENGTH 1464//数据包中的有效数据部分的长度
-#define SENDER_PORT 4001//发送者的端口号
-#define SENDER_ADDR "127.0.0.1"//发送者的IP地址
-#define RECVER_PORT 4000//接收者的端口号
-#define RECVER_ADDR "127.0.0.1"//接收者的IP地址
+
+//#define SENDER_PORT 1001//发送者的端口号
+//#define SENDER_ADDR "10.130.75.174"//发送者的IP地址
+//
+//#define RECVER_PORT 1000//接收者的端口号
+//#define RECVER_ADDR "127.0.0.1"//接收者的IP地址
+
 #define FILENAMELEN 50 //文件名的长度限制
 #define TIMEOUTS 1//超时重传间隔 秒
 #define TIMEOUTMS 0//超时重传间隔 毫秒
@@ -50,6 +53,8 @@ struct package {
 const int packageSize = sizeof(package);
 unsigned int ack = 0;//记录自己想要收到的下一个包的序号
 unsigned short fileCount = 0;
+char RECVER_ADDR[20] = {};
+unsigned short  RECVER_PORT;
 
 
 unsigned int checksum(const char* s, const int length);//差错检测
@@ -71,6 +76,10 @@ int main() {
 	//2. 定义接收端套接字及地址
 	SOCKET recver_socket;
 	SOCKADDR_IN recver_addr, sender_addr;
+	cout << "请输入接收端IP地址：";
+	cin >> RECVER_ADDR;
+	cout << "请输入接收端端口号：";
+	cin >> RECVER_PORT;
 	recver_addr.sin_family = AF_INET;
 	recver_addr.sin_addr.s_addr = inet_addr(RECVER_ADDR);
 	recver_addr.sin_port = htons(RECVER_PORT);
@@ -107,7 +116,6 @@ int main() {
 		if ((checksum((char*)pac, packageSize) == 0) && (pac->flag[0] & FLAG_SYN) == FLAG_SYN)//完好的SYN
 		{
 			package* spac = new package();
-			char* sbuf = new char[packageSize];
 			spac->flag[0] |= FLAG_ACK;
 			spac->flag[0] |= FLAG_SYN;
 			ack = pac->seq;//将接收方的ack设为发送方的seq
@@ -118,7 +126,6 @@ int main() {
 
 			sendto(recver_socket, (char*)spac, packageSize, 0, (sockaddr*)&sender_addr, len);//第二次握手
 			delete spac;
-			delete[]sbuf;
 			delete pac;
 			//delete[]buf;
 			break;
@@ -127,13 +134,13 @@ int main() {
 		//delete[]buf;
 	}
 	cout << "两次握手成功！" << endl;
-	cout << "两次握手后，recver的ack=" << ack << endl;
-	 //6. rdt2.2接收端
+	cout << endl;
+	 //6. 接收端逐文件接收
 	//第一个包包含文件名，单独识别
 	recvOneFile(recver_socket, (sockaddr*)&sender_addr, len);
 	recvOneFile(recver_socket, (sockaddr*)&sender_addr, len);
 	recvOneFile(recver_socket, (sockaddr*)&sender_addr, len);
-	recvOneFile(recver_socket, (sockaddr*)&sender_addr, len);
+	//recvOneFile(recver_socket, (sockaddr*)&sender_addr, len);
 
 
 	closesocket(recver_socket);
@@ -187,34 +194,35 @@ void recvOneFile(SOCKET s, sockaddr* to, int tolen) {
 
 	short missCount = 0;
 
-	struct timeval timeout = { TIMEOUTS,TIMEOUTMS };
-	fd_set fdr;
-	FD_ZERO(&fdr);
-	FD_SET(s, &fdr);
-	int ret ;
+
 	while (1)//必须先等到一个FLAG_FHEAD位为1的包
 	{
+		struct timeval timeout = { TIMEOUTS,TIMEOUTMS };
+		fd_set fdr;
+		FD_ZERO(&fdr);
+		FD_SET(s, &fdr);
+		int ret;
 		ret = select(s, &fdr, NULL, NULL, &timeout);
 		if (ret < 0) {
-			cout << "发生select错误！接收失败！" << endl;
-	
+			cout << "接收文件头时发生socket错误！" << endl;
 			delete pac;
-			return;
+			exit(-1);
 		}
 		else if (ret == 0) {
 			//cout << "等待文件头部信息超时" << ++missCount << "次" << endl;
 			if (missCount == MISSLIMT)
 			{
-				//cout << "文件头部信息接收失败！放弃传输！" << endl;
+				cout << "文件头部信息接收超时！放弃传输！" << endl;
 	
 				delete pac;
 				exit(-1);
 			}
 		}
-		else {
+		else  {
 			//从源地址接收文件名数据包
 			recvfrom(s, (char*)pac, packageSize, 0, to, &tolen);
-	
+			if (checksum((char*)pac, packageSize) != 0)
+				continue;
 			if (((pac->flag[0] & FLAG_FHEAD) == FLAG_FHEAD) && pac->seq == ack) {
 				memcpy(&filelen, pac->data, 4);
 
@@ -254,7 +262,6 @@ void recvOneFile(SOCKET s, sockaddr* to, int tolen) {
 				writelen = count * DATALENGTH;
 				writer.write(file, writelen);
 				writer.write(pac->data, pac->taillen);
-
 				break;
 			}
 			else//不是文件结尾，正常写入file
@@ -272,6 +279,6 @@ void recvOneFile(SOCKET s, sockaddr* to, int tolen) {
 	delete[]file;
 	delete pac;
 	writer.close();
-	cout << "成功接收第" << ++fileCount << "个文件!" << endl;
+	cout << "成功接收 " << filename << " 文件!" << endl;
 	//cout << "ack:" << ack << endl;
 }
