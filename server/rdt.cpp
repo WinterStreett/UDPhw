@@ -82,7 +82,6 @@ int recvOneFile(SOCKET s, sockaddr* to, int tolen) {
 	int count = 0;//统计包的数量
 	int writelen;
 
-
 	while (1)//必须先等到一个FLAG_FHEAD位为1的包
 	{
 		struct timeval timeout = { TIMEOUTS,TIMEOUTVS };
@@ -125,40 +124,62 @@ int recvOneFile(SOCKET s, sockaddr* to, int tolen) {
 	}
 	cout << "文件头接收成功！" << endl;
 	sendACK(s,false, to, tolen);//发送ACK 这个ack应该是0，不是说服务器端想要的下一个数据包序号为0;
+	writer.open(filename, ios::binary);
 
 	ack++;
 	//开始接收文件
 	while (1) {
-		pac = new package();
-		recvfrom(s, (char*)pac, packageSize, 0, to, &tolen);
-		if ((checksum((char*)pac, packageSize) != 0) || (pac->seq != ack))//如果这个包被损坏了，或者不是接收方想要的包
+		struct timeval timeout = { TIMEOUTS,TIMEOUTVS };
+		fd_set fdr;
+		FD_ZERO(&fdr);
+		FD_SET(s, &fdr);
+		int ret= select(s, &fdr, NULL, NULL, &timeout);
+		if (ret < 0)//发生错误
 		{
-			//重发ACK包
+			cout << "select发生错误！" << endl;
+			goto ERR;
+		}
+		else if (ret == 0)//等待超时
+		{
 			sendACK(s, false, to, tolen);
-		}
-		else if (pac->seq == ack) {//如果接收到了正确的包，写入文件返回正确的ACK
-			sendACK(s, true, to, tolen);
-			ack++;
-			if ((pac->flag[0] & FLAG_FEND) == FLAG_FEND)//如果接收到的是文件末尾，写入文件退出
-			{
-				writelen = count * DATALENGTH;
-				writer.write(file, writelen);
-				writer.write(pac->data, pac->taillen);
-				break;
-			}
-			else//不是文件结尾，正常写入file
-			{
-				writelen = count * DATALENGTH;
-				memcpy(file + writelen, pac->data, DATALENGTH);
-				count++;
+			missCount++;
+			if (missCount == MISSLIMT) {
+				cout << "连续超时五次，退出接收" << endl;
+				goto ERR;
 			}
 		}
-		delete pac;
+		else {//接收到一个包
+			pac = new package();
+			recvfrom(s, (char*)pac, packageSize, 0, to, &tolen);
+			if (checksum((char*)pac, packageSize) != 0)//如果这个包被损坏了
+			{
+				continue;
+			}
+			else if (pac->seq == ack) {//如果接收到了正确的包，写入文件先不返回ACK
+				if (pac->flag[0] & FLAG_FEND)//如果接收到的是文件末尾，写入文件退出
+				{
+					writelen = count * DATALENGTH;
+					memcpy((char*)(file + writelen), pac->data, pac->taillen);//将文件尾写入file缓冲区
+					writer.write(file, filelen);//将缓冲区写入文件
+					sendACK(s, true, to, tolen);//发送ack
+					cout << "成功接收 " << filename << " 文件!" << endl;
+					cout << "一共接收了：" << ++count << "个包" << endl;
+					goto WRITE;
+				}
+				else//不是文件结尾，正常写入file
+				{
+					writelen = count * DATALENGTH;
+					memcpy((char*)(file + writelen), pac->data, DATALENGTH);//将数据写入file缓冲区
+					count++;
+				}
+				ack++;
+			}
+			delete pac;
+			missCount = 0;
+		}
 	}
-	cout << "成功接收 " << filename << " 文件!" << endl;
 WRITE:
-	writer.open(filename, ios::binary);
-	writer.write(file, filelen);
+	//cout << file << endl;
 	writer.close();
 	delete[]file;
 	return 0;

@@ -11,15 +11,15 @@ using namespace std;
 #define HEADLENGTH 16//报文头部的长度
 #define DATALENGTH 1464//数据包中的有效数据部分的长度
 
-#define SENDER_PORT 4001//发送者的端口号
-#define SENDER_ADDR "127.0.0.1"//发送者的IP地址
-
-#define RECVER_PORT 4000//接收者的端口号
-#define RECVER_ADDR "127.0.0.1"//接收者的IP地址
+//#define SENDER_PORT 4001//发送者的端口号
+//#define SENDER_ADDR "127.0.0.1"//发送者的IP地址
+//
+//#define RECVER_PORT 4000//接收者的端口号
+//#define RECVER_ADDR "127.0.0.1"//接收者的IP地址
 
 #define FILENAMELEN 50 //文件名的长度限制
 #define TIMEOUTS 0//超时重传间隔 秒
-#define TIMEOUTVS 100000//超时重传间隔 微秒
+#define TIMEOUTVS 300//超时重传间隔 微秒
 
 #define MISSLIMT 5//超时重传的最大次数限制
 

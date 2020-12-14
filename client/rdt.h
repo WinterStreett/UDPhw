@@ -14,10 +14,10 @@ using namespace std;
 #define DATALENGTH 1464//数据包中的有效数据部分的长度
 
 //地址相关的宏
-#define SENDER_PORT 4001//发送者的端口号
-#define SENDER_ADDR "127.0.0.1"//发送者的IP地址
-#define RECVER_PORT 4000//接收者的端口号
-#define RECVER_ADDR "127.0.0.1"//接收者的IP地址
+//#define SENDER_PORT 4001//发送者的端口号
+//#define SENDER_ADDR "127.0.0.1"//发送者的IP地址
+//#define RECVER_PORT 4000//接收者的端口号
+//#define RECVER_ADDR "127.0.0.1"//接收者的IP地址
 
 //超时相关的宏
 #define FILENAMELEN 50 //文件名的长度限制

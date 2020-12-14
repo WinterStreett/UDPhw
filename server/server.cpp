@@ -3,6 +3,8 @@ using namespace std;
 
 const int packageSize = sizeof(package);
 unsigned int ack = 0;//记录自己想要收到的下一个包的序号
+char RECVER_ADDR[20] = {};//服务器端地址
+unsigned short  RECVER_PORT;//服务器端端口
 
 int main() {
 	//1. 初始化Socket DLL
@@ -16,6 +18,11 @@ int main() {
 	//2. 定义接收端套接字及地址
 	SOCKET server_socket;
 	SOCKADDR_IN server_addr, client_addr;
+	cout << "请输入接收端IP地址：";
+	cin >> RECVER_ADDR;
+	cout << "请输入接收端端口号：";
+	cin >> RECVER_PORT;
+	cout << endl;
 	server_addr.sin_family = AF_INET;
 	server_addr.sin_addr.s_addr = inet_addr(RECVER_ADDR);
 	server_addr.sin_port = htons(RECVER_PORT);
@@ -65,12 +72,12 @@ int main() {
 	cout << "两次握手成功！" << endl;
 	cout << endl;
 
-	if (recvOneFile(server_socket, (sockaddr*)&client_addr, len) < 0) {
-		goto ERR;
+	//接收文件循环
+	for (int i = 0; i < 4; i++) {
+		if (recvOneFile(server_socket, (sockaddr*)&client_addr, len) < 0) {
+			goto ERR;
+		}
 	}
-	//if (recvOneFile(server_socket, (sockaddr*)&client_addr, len) < 0) {
-	//	goto ERR;
-	//}
 
 CL:	closesocket(server_socket);
 	WSACleanup();

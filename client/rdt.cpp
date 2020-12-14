@@ -110,11 +110,11 @@ void Throughput(unsigned int len, clock_t time) {//计算吞吐率，自动补上单位输出
 int sendOneFile(SOCKET s, char* filename, sockaddr* to, int tolen) {
 	/*	功能：向目的地址，发送一个完整的文件
 */
-	unsigned int base = 0;//设定窗口初始位置
+	unsigned int base = 1;//设定窗口初始位置
 	unsigned int nextseq =  base + WINDOW;
 	//unsigned int pacCount = 0;//记录发送的数据包个数
 	clock_t start, end;//计时器
-	package* pac = new package();
+	package* pac;
 	unsigned int filelen;//文件长度
 	unsigned int pacNum;//需要的包总数量-1，不包含最后一个包
 	unsigned short taillen;
@@ -138,6 +138,7 @@ int sendOneFile(SOCKET s, char* filename, sockaddr* to, int tolen) {
 
 
 	//首先将文件名发给接收端
+	pac = new package();
 	memcpy(pac->data, &filelen, 4);//数据部分的前4个字节是文件长度
 	memcpy(pac->data + 4, filename, FILENAMELEN);//数据部分从4开始是文件名
 	pac->seq = 0;
@@ -145,21 +146,20 @@ int sendOneFile(SOCKET s, char* filename, sockaddr* to, int tolen) {
 	pac->flag[0] |= FLAG_FHEAD;//FHEAD标志位置一
 	pac->checksum = checksum((char*)pac, packageSize);
 	start = clock();
-
 	if (sendAndWait(s, (char*)pac, packageSize, 0, to, tolen) < 0) {
 		cout << "发送文件头失败！" << endl;
 		goto ERR;
 	}
 	cout << "发送文件名成功！" << endl;
+	delete pac;
 	//下面开始传输文件有效负荷
 	if (pacNum == 0)
 		goto LAST;
 	while (1) {
 		if (nextseq > pacNum) {
-			nextseq = pacNum;
+			nextseq = pacNum + 1;//防止访问过界
 		}
 		sendWindow(s, file, base, nextseq - 1, to, tolen);//发送一个窗口的数据包
-
 
 	//	//进入等待ACK状态
 		struct timeval timeout = { TIMEOUTS,TIMEOUTMS };
@@ -179,35 +179,36 @@ int sendOneFile(SOCKET s, char* filename, sockaddr* to, int tolen) {
 
 			missCount++;
 			if (missCount == MISSLIMT) {
-				cout << "超时5次，传输失败！" << endl;
+				cout << "连续超时5次，传输失败！" << endl;
 				goto ERR;
 			}
 		}
 		else {
 			pac = new package();
-			recvfrom(s, (char*)pac, packageSize, 0, from, &tolen);
+			recvfrom(s, (char*)pac, packageSize, 0, from, &tolen);//接收一个数据包
 			if ((checksum((char*)pac, packageSize) == 0)&&(pac->flag[0] & FLAG_ACK) ) {
 				//接收到一个完好的ACK包
-				if (pac->ack  >= base) {
-					base = pac->ack  ;
-					if (base == pacNum+1)
+				if (pac->ack  >= base) {//只有ack比base大的数据对客户端来说才是有意义的
+					base = pac->ack  ;//更新base为ack，即服务器想要的序号
+					if (base == pacNum+1)//如果base是最后一个数据包，则goto到专门的发送程序
 						goto LAST;
-					nextseq = base + WINDOW;
+					nextseq = base + WINDOW;//更新nextseq为滑动窗口的末尾+1
 				}
 			}
 			delete pac;
+			missCount = 0;
 		}
 	}
 	//额外发送最后一部分文件
 LAST:	
 	pac = new package();
-
-	pac->seq = base;
+	memcpy(pac->data, file + filelen - taillen, taillen);//将数据的最后一部分拷贝到数据包
+	pac->seq = base;//序号为base
 	pac->flag[0] |= FLAG_FEND;//将FEND标志位置位
-	pac->taillen = taillen;
-	pac->checksum = checksum((char*)pac, packageSize);
-	seq = base;
-	if (sendAndWait(s, (char*)pac, packageSize, 2, to, tolen) < 0) {
+	pac->taillen = taillen;//填入尾长字段
+	pac->checksum = checksum((char*)pac, packageSize);//校验和
+	seq = base;//sendAndWait会访问seq全局变量，这里先更新为base
+	if (sendAndWait(s, (char*)pac, packageSize, 2, to, tolen) < 0) {//发送并等待ack
 		cout << "最后一部分数据传输失败！" << endl;
 		goto ERR;
 	}
@@ -217,6 +218,8 @@ LAST:
 	cout << "成功发送 " << filename << " 文件！" << endl;
 	cout << "用时：" << end - start << "毫秒" << "	" << "吞吐率：";
 	Throughput(filelen, end - start);
+	cout << "一共发了" << base << "个包" << endl;
+
 CL://资源清理
 	delete[]file;
 	delete from;
@@ -225,18 +228,18 @@ CL://资源清理
 
 ERR:
 	delete[]file;
-	delete pac;
 	reader.close();
 	return -1;
 }
 
 void sendWindow(SOCKET s,const char* file, unsigned int left, unsigned int right, const sockaddr* to, int tolen) {
 	package* pac;
-	for (unsigned int i = left; i <= right; i++) {
+	//left和right分别是发送区间的左端点和右端点
+	for (unsigned int i = left-1; i < right; i++) {
 		pac = new package();
 		memcpy(pac->data, file + (i * DATALENGTH), DATALENGTH);
 		//设置数据包属性
-		pac->seq = i+1;
+		pac->seq = i + 1;
 		pac->checksum = checksum((char*)pac, packageSize);
 		//发出去
 		sendto(s, (char*)pac, packageSize, 0, to, tolen);

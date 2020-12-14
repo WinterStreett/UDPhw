@@ -7,9 +7,16 @@ const int packageSize = sizeof(package);
 unsigned short WINDOW;
 unsigned int seq = 0;
 
+char SENDER_ADDR[20] = {};//发送者的IP地址
+char RECVER_ADDR[20] = {};//接收者的IP地址
+unsigned int SENDER_PORT; //发送者的端口号
+unsigned int RECVER_PORT; //接收者的端口号
+
 int main() {
 	char filename[FILENAMELEN] = "temp//1.jpg";
 	char filename1[FILENAMELEN] = "temp//2.jpg";
+	char filename2[FILENAMELEN] = "temp//3.jpg";
+	char filename3[FILENAMELEN] = "temp//helloworld.txt";
 
 	//1. 初始化Socket DLL
 	WORD wVersionRequested = MAKEWORD(2, 2);
@@ -20,6 +27,16 @@ int main() {
 		cout << "初始化Socket DLL失败！" << endl;
 
 	//2. 定义客户端套接字及地址
+	cout << "请输入发送端IP地址：";
+	cin >> SENDER_ADDR;
+	cout << "请输入发送端端口号：";
+	cin >> SENDER_PORT;
+	cout << "请输入路由器IP地址：";
+	cin >> RECVER_ADDR;
+	cout << "请输入路由器的端口号：";
+	cin >> RECVER_PORT;
+	cout << endl;
+
 	SOCKET client_socket;
 	SOCKADDR_IN server_addr, client_addr;
 	server_addr.sin_family = AF_INET;
@@ -74,12 +91,21 @@ int main() {
 	cout << endl;
 	//6. 3-2
 
+	//if (sendOneFile(client_socket, filename, (sockaddr*)&server_addr, addr_len)<0) {
+	//	cout << "发送文件 " << filename << " 失败！" << endl;
+	//}
 	if (sendOneFile(client_socket, filename, (sockaddr*)&server_addr, addr_len)<0) {
 		cout << "发送文件 " << filename << " 失败！" << endl;
 	}
-	//if (sendOneFile(client_socket, filename1, (sockaddr*)&server_addr, addr_len)<0) {
-	//	cout << "发送文件 " << filename1 << " 失败！" << endl;
-	//}
+	if (sendOneFile(client_socket, filename1, (sockaddr*)&server_addr, addr_len) < 0) {
+		cout << "发送文件 " << filename1 << " 失败！" << endl;
+	}
+	if (sendOneFile(client_socket, filename2, (sockaddr*)&server_addr, addr_len) < 0) {
+		cout << "发送文件 " << filename2 << " 失败！" << endl;
+	}
+	if (sendOneFile(client_socket, filename3, (sockaddr*)&server_addr, addr_len) < 0) {
+		cout << "发送文件 " << filename3 << " 失败！" << endl;
+	}
 
 CLEAN:
 	delete pac;
