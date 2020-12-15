@@ -11,7 +11,7 @@ using namespace std;
 
 //报文相关的宏
 #define HEADLENGTH 16//报文头部的长度
-#define DATALENGTH 1464//数据包中的有效数据部分的长度
+#define DATALENGTH 14964//数据包中的有效数据部分的长度
 
 //地址相关的宏
 //#define SENDER_PORT 4001//发送者的端口号

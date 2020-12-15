@@ -1,40 +1,40 @@
 #include"rdt.h"
 using namespace std;
 unsigned int checksum(const char* s, const int length) {
-	/*  ï¿½ï¿½ï¿½ë£ºï¿½Ö·ï¿½Ö¸ï¿½ï¿½
-	*		  ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+	/*  ÊäÈë£º×Ö·ûÖ¸Õë
+	*		  ×Ö·û´®³¤¶È
 	*
-	*	ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½Ð£ï¿½ï¿½ï¿½
+	*	Êä³ö£º×Ö·û´®µÄÐ£ÑéºÍ
 	*/
 	unsigned int sum = 0;
-	unsigned short temp1 = 0;//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Þ·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Õ¹ï¿½ï¿½ï¿½Ãµï¿½Ò»Ð©ï¿½ï¿½ï¿½ï¿½Ö¹Öµï¿½ï¿½ï¿½
+	unsigned short temp1 = 0;//ÕâÀï±ØÐëÊÇÎÞ·ûºÅÊý£¬·ñÔò»áÒòÎª·ûºÅÀ©Õ¹£¬µÃµ½Ò»Ð©ÆæÆæ¹Ö¹ÖµÄÊý
 	unsigned short temp2 = 0;
 	for (int i = 0; i < length; i += 2) {
 		temp1 = s[i + 1] << 8;
-		temp2 = s[i] & 0x00ff;//Ò»ï¿½ï¿½Òªï¿½Ñ¸ï¿½8Î»ï¿½ï¿½ï¿½ã£¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½8Î»ï¿½ï¿½ï¿½Î»ï¿½ï¿½1ï¿½ï¿½ï¿½ï¿½Ã´ï¿½ï¿½8Î»Ò²ï¿½ï¿½ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Õ¹ï¿½ï¿½È«Îª1
+		temp2 = s[i] & 0x00ff;//Ò»¶¨Òª°Ñ¸ß8Î»ÖÃÁã£¡·ñÔòÈç¹ûµÍ8Î»×î¸ßÎ»ÊÇ1£¬ÄÇÃ´¸ß8Î»Ò²»áÒòÎª·ûºÅÀ©Õ¹¶øÈ«Îª1
 		sum += temp1 | temp2;
 	}
-	while (sum > 0xffff) {//ï¿½Ñ¼Ó·ï¿½ï¿½ï¿½ï¿½ï¿½Ä²ï¿½ï¿½Ö£ï¿½ï¿½ï¿½ï¿½Ú¸ï¿½16Î»ï¿½ï¿½ï¿½Óµï¿½ï¿½ï¿½16Î»ï¿½ï¿½
+	while (sum > 0xffff) {//°Ñ¼Ó·¨Òç³öµÄ²¿·Ö£¨´æÔÚ¸ß16Î»£©¼Óµ½µÍ16Î»ÉÏ
 		sum = (sum & 0xffff) + (sum >> 16);
 	}
-	return ~(sum | 0xffff0000);//ï¿½ï¿½16Î»È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½16Î»È«Îª0
+	return ~(sum | 0xffff0000);//µÍ16Î»È¡·´£¬¸ß16Î»È«Îª0
 }
 
 
 int sendAndWait(SOCKET s, const char* buf, int len, int flags, const sockaddr* to, int tolen) {
-	/*	ï¿½ï¿½ï¿½Ü£ï¿½ï¿½ï¿½Ö¸ï¿½ï¿½Ä¿ï¿½ÄµØ·ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½Ý°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È´ï¿½ï¿½ï¿½È·ï¿½ï¿½ACK,ACKÈ·ï¿½Ïºï¿½ï¿½ï¿½Ü·ï¿½ï¿½ï¿½
-	*	flags: 0 ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½Í·Ê±Ê¹ï¿½ï¿½
-	*		   1 ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¢Ê¹ï¿½ï¿½
-	*		   2 ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½Î²Ê¹ï¿½ï¿½
+	/*	¹¦ÄÜ£ºÏòÖ¸¶¨Ä¿µÄµØ·¢ËÍÒ»¸öÊý¾Ý°ü£¬²¢µÈ´ýÕýÈ·µÄACK,ACKÈ·ÈÏºó²ÅÄÜ·µ»Ø
+	*	flags: 0 ·¢ËÍÎÄ¼þÍ·Ê±Ê¹ÓÃ
+	*		   1 ·¢ËÍÎÕÊÖÐÅÏ¢Ê¹ÓÃ
+	*		   2 ·¢ËÍÎÄ¼þÎ²Ê¹ÓÃ
 	*/
 	int missCount = 0;
 	SOCKADDR_IN from;
 	sendto(s, buf, len, 0, to, tolen);
 	int a = 0;
 	package* recv_pac;
-	//ï¿½ï¿½ï¿½ï¿½ï¿½ÇµÈ´ï¿½ACK
+	//ÏÂÃæÊÇµÈ´ýACK
 	while (1) {
-		//ï¿½Â½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð½ï¿½ï¿½Õµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+		//ÐÂ½¨Á½¸ö±äÁ¿£¬ÓÃÀ´³Ð½ÓÊÕµ½µÄÊý¾Ý
 		struct timeval timeout = { TIMEOUTS,TIMEOUTMS };
 		fd_set fdr;
 		FD_ZERO(&fdr);
@@ -42,43 +42,43 @@ int sendAndWait(SOCKET s, const char* buf, int len, int flags, const sockaddr* t
 		int ret;
 		recv_pac = new package();
 		ret = select(s, &fdr, NULL, NULL, &timeout);
-		if (ret < 0)//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+		if (ret < 0)//·¢Éú´íÎó
 		{
-			cout << "selectï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½" << endl;
+			cout << "select·¢Éú´íÎó£¡" << endl;
 			delete recv_pac;
 			return -1;
 		}
-		else if (ret == 0)//ï¿½È´ï¿½ï¿½ï¿½Ê±
+		else if (ret == 0)//µÈ´ý³¬Ê±
 		{
-			sendto(s, buf, len, 0, to, tolen);//ï¿½Ø·ï¿½
+			sendto(s, buf, len, 0, to, tolen);//ÖØ·¢
 			missCount++;
-			//cout << "ï¿½ï¿½" << missCount << "ï¿½Î³ï¿½Ê±ï¿½ï¿½" << endl;
+			//cout << "µÚ" << missCount << "´Î³¬Ê±£¡" << endl;
 			if (missCount == MISSLIMT) {
 				delete recv_pac;
-				//cout << "ï¿½ï¿½Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Þ£ï¿½ï¿½ï¿½ï¿½ï¿½Ê§ï¿½Ü£ï¿½" << endl;
+				//cout << "³¬Ê±´ÎÊýµ½´ïÉÏÏÞ£¬·¢ËÍÊ§°Ü£¡" << endl;
 				return -1;
 			}
 		}
 		else {
 			recvfrom(s, (char*)recv_pac, packageSize, 0, (sockaddr*)&from, &tolen);
-			//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Õµï¿½ï¿½Ä°ï¿½ï¿½Ç·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä£ï¿½ï¿½Ô¼ï¿½ACKï¿½Ö¶ï¿½
+			//¼ì²éÕâ¸öÊÕµ½µÄ°üÊÇ·ñÊÇÊÜËðµÄ£¬ÒÔ¼°ACK×Ö¶Î
 			if (checksum((char*)recv_pac, packageSize) != 0) {
-				//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Õµï¿½ï¿½Ä°ï¿½ï¿½ï¿½ï¿½ï¿½  ï¿½ï¿½Ã´ï¿½Ø·ï¿½Ò»ï¿½ï¿½
+				//Èç¹û½ÓÊÕµ½µÄ°üÊÜËð  ÄÇÃ´ÖØ·¢Ò»´Î
 				sendto(s, buf, len, 0, to, tolen);
 			}
 			else if ((flags==1)&&((recv_pac->flag[0] & (FLAG_ACK|FLAG_SYN)) == (FLAG_ACK | FLAG_SYN)) && (recv_pac->ack == 0)) {
-				//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ï¢ack
+				//ÎÕÊÖÐÅÏ¢ack
 				break;
 			}
 			else if (!flags && (recv_pac->flag[0] & FLAG_ACK) && (recv_pac->ack == 0)) {
-				//ï¿½Ä¼ï¿½Í·ï¿½ï¿½Ï¢ï¿½ï¿½ack
+				//ÎÄ¼þÍ·ÐÅÏ¢µÄack
 				break;
 			}
 			else if ((flags == 2) && (recv_pac->flag[0] & FLAG_ACK) && (recv_pac->ack == seq + 1)) {
-				//ï¿½Ä¼ï¿½Î²×¨ï¿½ï¿½
+				//ÎÄ¼þÎ²×¨ÓÃ
 				break;
 			}
-			else if ((recv_pac->flag[0] & FLAG_ACK) && (recv_pac->ack != seq + 1)) {//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ACK ï¿½ï¿½Ã´ï¿½Ø·ï¿½Ò»ï¿½ï¿½ Ã»Ê²Ã´ï¿½ï¿½
+			else if ((recv_pac->flag[0] & FLAG_ACK) && (recv_pac->ack != seq + 1)) {//ÊÇÈßÓàACK ÄÇÃ´ÖØ·¢Ò»´Î Ã»Ê²Ã´ÓÃ
 				sendto(s, buf, len, 0, to, tolen);
 			}
 		}
@@ -87,7 +87,7 @@ int sendAndWait(SOCKET s, const char* buf, int len, int flags, const sockaddr* t
 	return 0;
 }
 
-void Throughput(unsigned int len, clock_t time) {//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê£ï¿½ï¿½Ô¶ï¿½ï¿½ï¿½ï¿½Ïµï¿½Î»ï¿½ï¿½ï¿½
+void Throughput(unsigned int len, clock_t time) {//¼ÆËãÍÌÍÂÂÊ£¬×Ô¶¯²¹ÉÏµ¥Î»Êä³ö
 	double result = len * 8000 / time;
 	if (result > 1000000000) {
 		result /= 1000000000;
@@ -108,119 +108,116 @@ void Throughput(unsigned int len, clock_t time) {//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê£
 }
 
 int sendOneFile(SOCKET s, char* filename, sockaddr* to, int tolen) {
-	/*	ï¿½ï¿½ï¿½Ü£ï¿½ï¿½ï¿½Ä¿ï¿½Äµï¿½Ö·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½
+	/*	¹¦ÄÜ£ºÏòÄ¿µÄµØÖ·£¬·¢ËÍÒ»¸öÍêÕûµÄÎÄ¼þ
 */
-	unsigned int base = 1;//ï¿½è¶¨ï¿½ï¿½ï¿½Ú³ï¿½Ê¼Î»ï¿½ï¿½
+	unsigned int base = 1;//Éè¶¨´°¿Ú³õÊ¼Î»ÖÃ
 	unsigned int nextseq =  base + WINDOW;
-	//unsigned int pacCount = 0;//ï¿½ï¿½Â¼ï¿½ï¿½ï¿½Íµï¿½ï¿½ï¿½ï¿½Ý°ï¿½ï¿½ï¿½ï¿½ï¿½
-	clock_t start, end;//ï¿½ï¿½Ê±ï¿½ï¿½
+	//unsigned int pacCount = 0;//¼ÇÂ¼·¢ËÍµÄÊý¾Ý°ü¸öÊý
+	clock_t start, end;//¼ÆÊ±Æ÷
 	package* pac;
-	unsigned int filelen;//ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½
-	unsigned int pacNum;//ï¿½ï¿½Òªï¿½Ä°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½-1ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½
+	unsigned int filelen;//ÎÄ¼þ³¤¶È
+	unsigned int pacNum;//ÐèÒªµÄ°ü×ÜÊýÁ¿-1£¬²»°üº¬×îºóÒ»¸ö°ü
 	unsigned short taillen;
-	char* file;//ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
-	short missCount = 0;//ï¿½ï¿½Ê±ï¿½ï¿½Â¼
-	unsigned int a;
+	char* file;//±£´æÎÄ¼þµÄÊý×é
+	short missCount = 0;//³¬Ê±¼ÇÂ¼
 	sockaddr* from = new sockaddr();
 
-	//ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½
+	//¶ÁÈ¡Õû¸öÎÄ¼þ
 	ifstream reader;
 	reader.open(filename, ios::binary);
 	reader.seekg(0, ios::end);
 	filelen = reader.tellg();
 	reader.seekg(0, ios::beg);
-	file = new char[filelen];//fileï¿½Ð±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½
+	file = new char[filelen];//fileÖÐ±£´æ×ÅÎÄ¼þÊý¾Ý
 
 	reader.read(file, filelen);
 
-	pacNum = filelen / DATALENGTH;//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Î²ï¿½ï¿½
-	taillen = filelen % DATALENGTH;//Î²ï¿½ï¿½Ê£ï¿½à³¤ï¿½ï¿½
+	pacNum = filelen / DATALENGTH;//¿ÉÄÜÓÐÎ²²¿
+	taillen = filelen % DATALENGTH;//Î²²¿Ê£Óà³¤¶È
 
 
-	//ï¿½ï¿½ï¿½È½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Õ¶ï¿½
+	//Ê×ÏÈ½«ÎÄ¼þÃû·¢¸ø½ÓÊÕ¶Ë
 	pac = new package();
-	memcpy(pac->data, &filelen, 4);//ï¿½ï¿½ï¿½Ý²ï¿½ï¿½Öµï¿½Ç°4ï¿½ï¿½ï¿½Ö½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½ï¿½
-	memcpy(pac->data + 4, filename, FILENAMELEN);//ï¿½ï¿½ï¿½Ý²ï¿½ï¿½Ö´ï¿½4ï¿½ï¿½Ê¼ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½
+	memcpy(pac->data, &filelen, 4);//Êý¾Ý²¿·ÖµÄÇ°4¸ö×Ö½ÚÊÇÎÄ¼þ³¤¶È
+	memcpy(pac->data + 4, filename, FILENAMELEN);//Êý¾Ý²¿·Ö´Ó4¿ªÊ¼ÊÇÎÄ¼þÃû
 	pac->seq = 0;
 	pac->window = WINDOW;
-	pac->flag[0] |= FLAG_FHEAD;//FHEADï¿½ï¿½Ö¾Î»ï¿½ï¿½Ò»
+	pac->flag[0] |= FLAG_FHEAD;//FHEAD±êÖ¾Î»ÖÃÒ»
 	pac->checksum = checksum((char*)pac, packageSize);
 	start = clock();
 	if (sendAndWait(s, (char*)pac, packageSize, 0, to, tolen) < 0) {
-		cout << "ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½Í·Ê§ï¿½Ü£ï¿½" << endl;
+		cout << "·¢ËÍÎÄ¼þÍ·Ê§°Ü£¡" << endl;
 		goto ERR;
 	}
-	cout << "ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½ï¿½É¹ï¿½ï¿½ï¿½" << endl;
+	cout << "·¢ËÍÎÄ¼þÃû³É¹¦£¡" << endl;
 	delete pac;
-	//ï¿½ï¿½ï¿½æ¿ªÊ¼ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½ï¿½Ð§ï¿½ï¿½ï¿½ï¿½
+	//ÏÂÃæ¿ªÊ¼´«ÊäÎÄ¼þÓÐÐ§¸ººÉ
 	if (pacNum == 0)
 		goto LAST;
 	while (1) {
 		if (nextseq > pacNum) {
-			nextseq = pacNum + 1;//ï¿½ï¿½Ö¹ï¿½ï¿½ï¿½Ê¹ï¿½ï¿½ï¿½
+			nextseq = pacNum + 1;
 		}
+		sendWindow(s, file, base, nextseq - 1, to, tolen);//·¢ËÍÒ»¸ö´°¿ÚµÄÊý¾Ý°ü
 
-SEND:	sendWindow(s, file, base, nextseq - 1, to, tolen);//ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½Úµï¿½ï¿½ï¿½ï¿½Ý°ï¿½
-
-	//	//ï¿½ï¿½ï¿½ï¿½È´ï¿½ACK×´Ì¬
+	//	//½øÈëµÈ´ýACK×´Ì¬
 		struct timeval timeout = { TIMEOUTS,TIMEOUTMS };
 		fd_set fdr;
 		FD_ZERO(&fdr);
 		FD_SET(s, &fdr);
 		int ret = select(s, &fdr, NULL, NULL, &timeout);
 
-		if (ret < 0)//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+		if (ret < 0)//·¢Éú´íÎó
 		{
-			cout << "selectï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½" << endl;
+			cout << "select·¢Éú´íÎó£¡" << endl;
 			goto ERR;
 		}
-		else if (ret == 0)//ï¿½È´ï¿½ï¿½ï¿½Ê±
+		else if (ret == 0)//µÈ´ý³¬Ê±
 		{
 			missCount++;
 			if (missCount == MISSLIMT) {
-				cout << "ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê±5ï¿½Î£ï¿½ï¿½ï¿½ï¿½ï¿½Ê§ï¿½Ü£ï¿½" << endl;
+				cout << "Á¬Ðø³¬Ê±5´Î£¬´«ÊäÊ§°Ü£¡" << endl;
 				goto ERR;
 			}
-			goto SEND;
 		}
 		else {
 			pac = new package();
-			recvfrom(s, (char*)pac, packageSize, 0, from, &tolen);//ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½Ý°ï¿½
+			recvfrom(s, (char*)pac, packageSize, 0, from, &tolen);
 			if ((checksum((char*)pac, packageSize) == 0)&&(pac->flag[0] & FLAG_ACK) ) {
-				//ï¿½ï¿½ï¿½Õµï¿½Ò»ï¿½ï¿½ï¿½ï¿½Ãµï¿½ACKï¿½ï¿½
-				if (pac->ack  >= base) {//Ö»ï¿½ï¿½ackï¿½ï¿½baseï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý¶Ô¿Í»ï¿½ï¿½ï¿½ï¿½ï¿½Ëµï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
-					base = pac->ack  ;//ï¿½ï¿½ï¿½ï¿½baseÎªackï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Òªï¿½ï¿½ï¿½ï¿½ï¿½
-					if (base == pacNum+1)//ï¿½ï¿½ï¿½baseï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½Ý°ï¿½ï¿½ï¿½ï¿½ï¿½gotoï¿½ï¿½×¨ï¿½ÅµÄ·ï¿½ï¿½Í³ï¿½ï¿½ï¿½
+				//½ÓÊÕµ½Ò»¸öÍêºÃµÄACK°ü
+				if (pac->ack  >= base) {
+					base = pac->ack  ;
+					if (base == pacNum+1)
 						goto LAST;
-					nextseq = base + WINDOW;//ï¿½ï¿½ï¿½ï¿½nextseqÎªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Úµï¿½Ä©Î²+1
+					nextseq = base + WINDOW;
 				}
 			}
 			delete pac;
 			missCount = 0;
 		}
 	}
-	//ï¿½ï¿½ï¿½â·¢ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½
+	//¶îÍâ·¢ËÍ×îºóÒ»²¿·ÖÎÄ¼þ
 LAST:	
 	pac = new package();
-	memcpy(pac->data, file + filelen - taillen, taillen);//ï¿½ï¿½ï¿½ï¿½ï¿½Ýµï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ö¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý°ï¿½
-	pac->seq = base;//ï¿½ï¿½ï¿½Îªbase
-	pac->flag[0] |= FLAG_FEND;//ï¿½ï¿½FENDï¿½ï¿½Ö¾Î»ï¿½ï¿½Î»
-	pac->taillen = taillen;//ï¿½ï¿½ï¿½ï¿½Î²ï¿½ï¿½ï¿½Ö¶ï¿½
-	pac->checksum = checksum((char*)pac, packageSize);//Ð£ï¿½ï¿½ï¿½
-	seq = base;//sendAndWaitï¿½ï¿½ï¿½ï¿½ï¿½seqÈ«ï¿½Ö±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½È¸ï¿½ï¿½ï¿½Îªbase
-	if (sendAndWait(s, (char*)pac, packageSize, 2, to, tolen) < 0) {//ï¿½ï¿½ï¿½Í²ï¿½ï¿½È´ï¿½ack
-		cout << "ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý´ï¿½ï¿½ï¿½Ê§ï¿½Ü£ï¿½" << endl;
+	memcpy(pac->data, file + filelen - taillen, taillen);
+	pac->seq = base;
+	pac->flag[0] |= FLAG_FEND;//½«FEND±êÖ¾Î»ÖÃÎ»
+	pac->taillen = taillen;
+	pac->checksum = checksum((char*)pac, packageSize);
+	seq = base;
+	if (sendAndWait(s, (char*)pac, packageSize, 2, to, tolen) < 0) {
+		cout << "×îºóÒ»²¿·ÖÊý¾Ý´«ÊäÊ§°Ü£¡" << endl;
 		goto ERR;
 	}
 
 	end = clock();
 	delete pac;
-	cout << "ï¿½É¹ï¿½ï¿½ï¿½ï¿½ï¿½ " << filename << " ï¿½Ä¼ï¿½ï¿½ï¿½" << endl;
-	cout << "ï¿½ï¿½Ê±ï¿½ï¿½" << end - start << "ï¿½ï¿½ï¿½ï¿½" << "	" << "ï¿½ï¿½ï¿½ï¿½ï¿½Ê£ï¿½";
+	cout << "³É¹¦·¢ËÍ " << filename << " ÎÄ¼þ£¡" << endl;
+	cout << "ÓÃÊ±£º" << end - start << "ºÁÃë" << "	" << "ÍÌÍÂÂÊ£º";
 	Throughput(filelen, end - start);
-	cout << "Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½" << base << "ï¿½ï¿½ï¿½ï¿½" << endl;
+	cout << "Ò»¹²·¢ÁË" << base << "¸ö°ü" << endl;
 
- 	//ï¿½ï¿½Ô´ï¿½ï¿½ï¿½ï¿½
+	//×ÊÔ´ÇåÀí
 	delete[]file;
 	delete from;
 	reader.close();
@@ -234,14 +231,13 @@ ERR:
 
 void sendWindow(SOCKET s,const char* file, unsigned int left, unsigned int right, const sockaddr* to, int tolen) {
 	package* pac;
-	//leftï¿½ï¿½rightï¿½Ö±ï¿½ï¿½Ç·ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ëµï¿½ï¿½ï¿½Ò¶Ëµï¿½
 	for (unsigned int i = left-1; i < right; i++) {
 		pac = new package();
 		memcpy(pac->data, file + (i * DATALENGTH), DATALENGTH);
-		//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý°ï¿½ï¿½ï¿½ï¿½ï¿½
+		//ÉèÖÃÊý¾Ý°üÊôÐÔ
 		pac->seq = i + 1;
 		pac->checksum = checksum((char*)pac, packageSize);
-		//ï¿½ï¿½ï¿½ï¿½È¥
+		//·¢³öÈ¥
 		sendto(s, (char*)pac, packageSize, 0, to, tolen);
 		delete pac;
 	}
